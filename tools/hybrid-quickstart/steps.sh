@@ -36,7 +36,7 @@ set_config_params() {
     export GKE_CLUSTER_NAME=${GKE_CLUSTER_NAME:-apigee-hybrid}
     export GKE_CLUSTER_MACHINE_TYPE=${GKE_CLUSTER_MACHINE_TYPE:-e2-standard-4}
 
-    export APIGEE_CTL_VERSION='1.4.2'
+    export APIGEE_CTL_VERSION='1.4.3'
     export KPT_VERSION='v0.34.0'
     export CERT_MANAGER_VERSION='v1.1.0'
     export ASM_VERSION='1.8'
@@ -268,7 +268,7 @@ configure_network() {
       if [[ "$INGRESS_TYPE" == "external" ]]; then
         gcloud compute addresses create apigee-ingress-ip --region "$REGION"
       else
-        gcloud compute addresses create apigee-ingress-ip --region "$REGION" --subnet default --purpose SHARED_LOADBALANCER_VIP
+        gcloud compute addresses create apigee-ingress-ip --region "$REGION" --subnet $NETWORK --purpose SHARED_LOADBALANCER_VIP
       fi
     fi
     INGRESS_IP=$(gcloud compute addresses list --format json --filter "name=apigee-ingress-ip" --format="get(address)")
@@ -285,7 +285,7 @@ configure_network() {
       if [[ "$INGRESS_TYPE" == "external" ]]; then
         gcloud dns managed-zones create apigee-dns-zone --dns-name="$DNS_NAME" --description=apigee-dns-zone
       else
-        gcloud dns managed-zones create apigee-dns-zone --dns-name="$DNS_NAME" --description=apigee-dns-zone --visibility="private" --networks="default"
+        gcloud dns managed-zones create apigee-dns-zone --dns-name="$DNS_NAME" --description=apigee-dns-zone --visibility="private" --networks="$NETWORK"
       fi
 
       rm -f transaction.yaml
@@ -311,20 +311,49 @@ create_gke_cluster() {
 
     if [ -z "$(gcloud container clusters list --filter "name=$GKE_CLUSTER_NAME" --format='get(name)')" ]; then
       gcloud container clusters create "$GKE_CLUSTER_NAME" \
-        --zone "$ZONE" \
-        --network default \
-        --subnetwork default \
+        --region "$REGION" \
+        --network $NETWORK \
+        --subnetwork $SUB_NETWORK \
         --default-max-pods-per-node "110" \
         --enable-ip-alias \
         --machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
-        --num-nodes "3" \
+        --num-nodes "1" \
         --enable-autoscaling --min-nodes "3" --max-nodes "6" \
         --labels mesh_id="$MESH_ID" \
         --workload-pool "$WORKLOAD_POOL" \
         --enable-stackdriver-kubernetes
+
+      gcloud container node-pools create "apigee-data" \
+        --project "$PROJECT_ID" \
+        --cluster "$GKE_CLUSTER_NAME" \
+        --region "$REGION" \
+        --machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
+        --image-type "COS_CONTAINERD" --disk-type "pd-ssd" --disk-size "250" \
+        --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
+        --num-nodes "1" \
+        --enable-autoupgrade --enable-autorepair \
+        --max-surge-upgrade 1 --max-unavailable-upgrade 0
+
+      gcloud container node-pools create "apigee-runtime" \
+        --project "$PROJECT_ID" \
+        --cluster "$GKE_CLUSTER_NAME" \
+        --region "$REGION" \
+        --machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
+        --image-type "COS_CONTAINERD" --disk-type "pd-ssd" --disk-size "10" \
+        --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
+        --num-nodes "2" \
+        --enable-autoscaling --min-nodes "2" --max-nodes "4" \
+        --enable-autoupgrade --enable-autorepair \
+        --max-surge-upgrade 1 --max-unavailable-upgrade 0
+
+      gcloud container node-pools delete "default-pool" \
+        --project "$PROJECT_ID" \
+        --cluster "$GKE_CLUSTER_NAME" \
+        --region "$REGION" -q
+
     fi
 
-    gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --zone "$ZONE"
+    gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region=$REGION
 
     kubectl create clusterrolebinding cluster-admin-binding \
       --clusterrole cluster-admin --user "$(gcloud config get-value account)" || true
@@ -372,10 +401,8 @@ spec:
         serviceAnnotations:
           cloud.google.com/app-protocols: '{"https":"HTTPS"}'
           cloud.google.com/neg: '{"ingress": true}'
-          networking.gke.io.load-balancer-type: $INGRESS_TYPE
         service:
-          type: LoadBalancer
-          loadBalancerIP: $INGRESS_IP
+          type: ClusterIP
           ports:
           - name: status-port
             port: 15021 # for ASM 1.7.x and above, else 15020
@@ -391,7 +418,7 @@ EOF
   "$QUICKSTART_TOOLS"/istio-asm/install_asm \
     --project_id "$PROJECT_ID" \
     --cluster_name "$GKE_CLUSTER_NAME" \
-    --cluster_location "$ZONE" \
+    --cluster_location "$REGION" \
     --output_dir "$QUICKSTART_TOOLS"/istio-asm \
     --custom_overlay "$QUICKSTART_TOOLS"/istio-asm/istio-operator-patch.yaml \
     --enable_all \
@@ -474,13 +501,23 @@ install_runtime() {
   cat << EOF > "$HYBRID_HOME"/overrides/overrides.yaml
 gcp:
   projectID: $PROJECT_ID
-  region: "$REGION" # Analytics Region
+  region: "$AX_REGION" # Analytics Region
 # Apigee org name.
 org: $PROJECT_ID
 # Kubernetes cluster name details
 k8sCluster:
   name: $GKE_CLUSTER_NAME
   region: "$REGION"
+
+nodeSelector:
+  # This flag determines if the scheduling passes/fails if the labels are missing.
+  requiredForScheduling: false
+  apigeeRuntime:
+    key: "cloud.google.com/gke-nodepool"
+    value: "apigee-runtime"
+  apigeeData:
+    key: "cloud.google.com/gke-nodepool"
+    value: "apigee-data"
 
 virtualhosts:
   - name: $ENV_GROUP_NAME
@@ -495,10 +532,45 @@ envs:
       synchronizer: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-synchronizer.json"
       udca: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-udca.json"
       runtime: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-distributed-trace.json"
+
+runtime:
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+
+cassandra:
+  hostNetwork: false  # Set to true for GKE-onprem Environment
+# multiRegionSeedHost: <Cassandra IP from Source region>  # Uncomment for multiregion configuration
+  auth:
+    default:
+      password: "password123"
+    admin:
+      password: "adminpassword123"
+    ddl:
+      password: "ddlpassword123"
+    dml:
+      password: "dmlpassword123"
+    jmx:
+      username: "jmxuser"
+      password: "jmxpassword123"
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 3500m
+      memory: 7Gi
+  maxHeapSize: 4096M
+  heapNewSize: 600M
+  storage:
+    # Create a storage class with SSD.
+    storageClass: pd-ssd
+    capacity: 200Gi
+
 mart:
   serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-mart.json"
 
 connectAgent:
+  replicaCountMin: 2
   serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-mart.json"
 
 metrics:
@@ -513,6 +585,7 @@ logger:
   serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-logger.json"
 
 EOF
+
     pushd "$HYBRID_HOME" || return # because apigeectl uses pwd-relative paths
     mkdir -p "$HYBRID_HOME"/generated
     "$APIGEECTL_HOME"/apigeectl init -f "$HYBRID_HOME"/overrides/overrides.yaml --print-yaml > "$HYBRID_HOME"/generated/apigee-init.yaml
@@ -532,13 +605,130 @@ EOF
     "https://apigee.googleapis.com/v1/organizations/${PROJECT_ID}:setSyncAuthorization" \
     -d "{\"identities\":[\"serviceAccount:apigee-synchronizer@${PROJECT_ID}.iam.gserviceaccount.com\"]}"
 
-    echo -n "🕵️‍♀️ Turn on trace logs"
-    curl --fail -X PATCH -H "Authorization: Bearer $(token)" \
-    -H "Content-Type:application/json" \
-    "https://apigee.googleapis.com/v1/organizations/${PROJECT_ID}/environments/$ENV_NAME/traceConfig" \
-    -d "{\"exporter\":\"CLOUD_TRACE\",\"endpoint\":\"${PROJECT_ID}\",\"sampling_config\":{\"sampler\":\"PROBABILITY\",\"sampling_rate\":0.5}}"
+    #echo -n "🕵️‍♀️ Turn on trace logs"
+    #curl --fail -X PATCH -H "Authorization: Bearer $(token)" \
+    #-H "Content-Type:application/json" \
+    #"https://apigee.googleapis.com/v1/organizations/${PROJECT_ID}/environments/$ENV_NAME/traceConfig" \
+    #-d "{\"exporter\":\"CLOUD_TRACE\",\"endpoint\":\"${PROJECT_ID}\",\"sampling_config\":{\"sampler\":\"PROBABILITY\",\"sampling_rate\":0.5}}"
 
-    echo "🎉🎉🎉 Hybrid installation completed!"
+    echo "🎉🎉🎉 Hybrid installation on this region is completed!"
+
+    kubectl get namespace apigee -o yaml > apigee-namespace.yaml
+    kubectl -n cert-manager get secret apigee-ca -o yaml > apigee-ca.yaml
+
+}
+
+install_runtime_region2() {
+  ENV_NAME=$1
+  ENV_GROUP_NAME=$2
+  echo "Configure Overrides"
+
+  cat << EOF > "$HYBRID_HOME"/overrides/overrides-dc2.yaml
+gcp:
+  projectID: $PROJECT_ID
+  region: "$AX_REGION" # Analytics Region
+# Apigee org name.
+org: $PROJECT_ID
+# Kubernetes cluster name details
+k8sCluster:
+  name: $GKE_CLUSTER_NAME
+  region: "$REGION"
+
+nodeSelector:
+  # This flag determines if the scheduling passes/fails if the labels are missing.
+  requiredForScheduling: false
+  apigeeRuntime:
+    key: "cloud.google.com/gke-nodepool"
+    value: "apigee-runtime"
+  apigeeData:
+    key: "cloud.google.com/gke-nodepool"
+    value: "apigee-data"
+
+virtualhosts:
+  - name: $ENV_GROUP_NAME
+    sslCertPath: $HYBRID_HOME/certs/$ENV_GROUP_NAME.fullchain.crt
+    sslKeyPath: $HYBRID_HOME/certs/$ENV_GROUP_NAME.key
+
+instanceID: "$PROJECT_ID-$(date +%s)"
+
+envs:
+  - name: $ENV_NAME
+    serviceAccountPaths:
+      synchronizer: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-synchronizer.json"
+      udca: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-udca.json"
+      runtime: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-distributed-trace.json"
+
+runtime:
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+
+cassandra:
+  hostNetwork: false  # Set to true for GKE-onprem Environment
+  multiRegionSeedHost: $POD_IP
+  datacenter: "dc-2"
+  rack: "ra-1"
+  auth:
+    default:
+      password: "password123"
+    admin:
+      password: "adminpassword123"
+    ddl:
+      password: "ddlpassword123"
+    dml:
+      password: "dmlpassword123"
+    jmx:
+      username: "jmxuser"
+      password: "jmxpassword123"
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 3500m
+      memory: 7Gi
+  maxHeapSize: 4096M
+  heapNewSize: 600M
+  storage:
+    # Create a storage class with SSD.
+    storageClass: pd-ssd
+    capacity: 200Gi
+
+mart:
+  serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-mart.json"
+
+connectAgent:
+  replicaCountMin: 2
+  serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-mart.json"
+
+metrics:
+  enabled: true
+  serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-metrics.json"
+
+watcher:
+  serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-watcher.json"
+
+logger:
+  enabled: false
+  serviceAccountPath: "$HYBRID_HOME/service-accounts/$PROJECT_ID-apigee-logger.json"
+
+EOF
+
+  kubectl apply -f apigee-namespace.yaml
+  kubectl -n cert-manager apply -f apigee-ca.yaml
+
+  pushd "$HYBRID_HOME" || return # because apigeectl uses pwd-relative paths
+    mkdir -p "$HYBRID_HOME"/generated
+    "$APIGEECTL_HOME"/apigeectl init -f "$HYBRID_HOME"/overrides/overrides-dc2.yaml --print-yaml > "$HYBRID_HOME"/generated/apigee-init-region2.yaml
+    echo -n "⏳ Waiting for Apigeectl init "
+    wait_for_ready "0" "$APIGEECTL_HOME/apigeectl check-ready -f $HYBRID_HOME/overrides/overrides-dc2.yaml > /dev/null  2>&1; echo \$?" "apigeectl init: done."
+
+    "$APIGEECTL_HOME"/apigeectl apply -f "$HYBRID_HOME"/overrides/overrides-dc2.yaml --print-yaml > "$HYBRID_HOME"/generated/apigee-runtime-region2.yaml
+
+    echo -n "⏳ Waiting for Apigeectl apply "
+    wait_for_ready "0" "$APIGEECTL_HOME/apigeectl check-ready -f $HYBRID_HOME/overrides/overrides-dc2.yaml > /dev/null  2>&1; echo \$?" "apigeectl apply: done."
+
+    popd || return
+
 }
 
 deploy_example_proxy() {
@@ -564,14 +754,14 @@ deploy_example_proxy() {
 
   echo "✅ Sample Proxy Deployed"
 
-  echo "🤓 Try without DNS (first deployment takes a few seconds. Relax and breathe!):"
+  #echo "🤓 Try without DNS (first deployment takes a few seconds. Relax and breathe!):"
 
-  if echo "$DNS_NAME" | grep -q ".nip.io"; then
-   echo "curl --cacert $QUICKSTART_ROOT/hybrid-files/certs/quickstart-ca.crt https://$ENV_GROUP_NAME.$DNS_NAME/httpbin/v0/anything"
-  else
-    echo "curl --cacert $QUICKSTART_ROOT/hybrid-files/certs/quickstart-ca.crt --resolve $ENV_GROUP_NAME.$DNS_NAME:443:$INGRESS_IP https://$ENV_GROUP_NAME.$DNS_NAME/httpbin/v0/anything"
-    echo "👋 To reach it via the FQDN: Make sure you add this as an NS record for $DNS_NAME: $NAME_SERVER"
-  fi
+  #if echo "$DNS_NAME" | grep -q ".nip.io"; then
+   #echo "curl --cacert $QUICKSTART_ROOT/hybrid-files/certs/quickstart-ca.crt https://$ENV_GROUP_NAME.$DNS_NAME/httpbin/v0/anything"
+  #else
+    #echo "curl --cacert $QUICKSTART_ROOT/hybrid-files/certs/quickstart-ca.crt --resolve $ENV_GROUP_NAME.$DNS_NAME:443:$INGRESS_IP https://$ENV_GROUP_NAME.$DNS_NAME/httpbin/v0/anything"
+    #echo "👋 To reach it via the FQDN: Make sure you add this as an NS record for $DNS_NAME: $NAME_SERVER"
+  #fi
 }
 
 delete_apigee_keys() {

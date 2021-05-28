@@ -54,6 +54,13 @@ gcloud projects create PROJECT_NAME [OPTIONS]
 export PROJECT_ID=PROJECT_NAME
 ```
 
+## Select the network
+
+```sh
+export NETWORK=default
+export SUB_NETWORK=default
+```
+
 ## Override Default Config (if desired)
 
 The following environment variables are set by default.

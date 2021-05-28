@@ -2,3 +2,5 @@ hybrid-files
 tools
 .env*
 example-proxy/*.zip
+*.pem
+asm-install.sh
