@@ -4,3 +4,5 @@ tools
 example-proxy/*.zip
 *.pem
 asm-install.sh
+apigee-ca.yaml
+apigee-namespace.yaml
