@@ -36,7 +36,8 @@ set_config_params() {
     export GKE_CLUSTER_NAME=${GKE_CLUSTER_NAME:-apigee-hybrid}
     export GKE_CLUSTER_MACHINE_TYPE=${GKE_CLUSTER_MACHINE_TYPE:-e2-standard-4}
 
-    export APIGEE_CTL_VERSION='1.4.3'
+    #export APIGEE_CTL_VERSION='1.4.3'
+    export APIGEE_CTL_VERSION='1.5.0'
     export KPT_VERSION='v0.34.0'
     export CERT_MANAGER_VERSION='v1.1.0'
     export ASM_VERSION='1.8'
@@ -487,9 +488,11 @@ create_self_signed_cert() {
 }
 
 create_sa() {
-    for SA in mart cassandra udca metrics synchronizer logger watcher distributed-trace
+    #for SA in mart cassandra udca metrics synchronizer logger watcher distributed-trace
+    for env in prod
     do
-      yes | "$APIGEECTL_HOME"/tools/create-service-account "apigee-$SA" "$HYBRID_HOME/service-accounts"
+      #yes | "$APIGEECTL_HOME"/tools/create-service-account "apigee-$SA" "$HYBRID_HOME/service-accounts"
+      yes | "$APIGEECTL_HOME"/tools/create-service-account -e $env -d "$HYBRID_HOME/service-accounts"
     done
 }
 
