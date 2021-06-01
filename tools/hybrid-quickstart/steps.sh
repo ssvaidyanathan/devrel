@@ -526,6 +526,7 @@ virtualhosts:
   - name: $ENV_GROUP_NAME
     sslCertPath: $HYBRID_HOME/certs/$ENV_GROUP_NAME.fullchain.crt
     sslKeyPath: $HYBRID_HOME/certs/$ENV_GROUP_NAME.key
+  # additionalGateways: ["wildcard-gateway-apigee"]
 
 instanceID: "$PROJECT_ID-$(date +%s)"
 
@@ -651,6 +652,7 @@ virtualhosts:
   - name: $ENV_GROUP_NAME
     sslCertPath: $HYBRID_HOME/certs/$ENV_GROUP_NAME.fullchain.crt
     sslKeyPath: $HYBRID_HOME/certs/$ENV_GROUP_NAME.key
+  # additionalGateways: ["wildcard-gateway-apigee"]
 
 instanceID: "$PROJECT_ID-$(date +%s)"
 
