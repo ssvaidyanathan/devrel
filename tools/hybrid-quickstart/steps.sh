@@ -323,7 +323,7 @@ create_gke_cluster() {
     --enable-ip-alias \
     --enable-private-nodes \
     --enable-private-endpoint \
-    --master-ipv4-cidr 10.76.0.0/28 \
+    --master-ipv4-cidr $MASTER_IPV4_CIDR \
     --labels mesh_id="$MESH_ID" \
     --workload-pool "$WORKLOAD_POOL" \
     --enable-stackdriver-kubernetes
