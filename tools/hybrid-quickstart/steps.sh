@@ -338,10 +338,10 @@ gcloud container node-pools create "apigee-data" \
     --cluster "$GKE_CLUSTER_NAME" \
     --region "$REGION" \
     --machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
-    --image-type "COS_CONTAINERD" --disk-type "pd-ssd" --disk-size "250" \
+    --image-type "COS" --disk-type "pd-ssd" --disk-size "250" \
     --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
     --num-nodes "1" \
-    --tags "apigee-data","gke-$PROJECT_ID","gke-$PROJECT_ID-main" \
+    --tags "apigee-data","gke-$PROJECT_ID","gke-$PROJECT_ID-main", "gke-$GKE_CLUSTER_NAME" \
     --enable-autoupgrade --enable-autorepair \
     --max-surge-upgrade 1 --max-unavailable-upgrade 0
 
@@ -350,10 +350,10 @@ gcloud container node-pools create "apigee-runtime" \
     --cluster "$GKE_CLUSTER_NAME" \
     --region "$REGION" \
     --machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
-    --image-type "COS_CONTAINERD" --disk-type "pd-ssd" --disk-size "10" \
+    --image-type "COS" --disk-type "pd-ssd" --disk-size "10" \
     --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
     --num-nodes "2" \
-    --tags "apigee-runtime","gke-$PROJECT_ID","gke-$PROJECT_ID-main" \
+    --tags "apigee-runtime","gke-$PROJECT_ID","gke-$PROJECT_ID-main", "gke-$GKE_CLUSTER_NAME" \
     --enable-autoscaling --min-nodes "2" --max-nodes "4" \
     --enable-autoupgrade --enable-autorepair \
     --max-surge-upgrade 1 --max-unavailable-upgrade 0
