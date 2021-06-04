@@ -310,28 +310,28 @@ configure_network() {
 create_gke_cluster() {
     echo "🚀 Create GKE cluster"
 
-    if [ -z "$(gcloud container clusters list --filter "name=$GKE_CLUSTER_NAME" --format='get(name)')" ]; then
-      gcloud container clusters create "$GKE_CLUSTER_NAME" \
-    --region "$REGION" \
-    --network $NETWORK \
-    --subnetwork $SUB_NETWORK \
-    --default-max-pods-per-node "110" \
-    --machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
-    --num-nodes "1" \
-    --enable-autoscaling --min-nodes "3" --max-nodes "6" \
-    --enable-master-authorized-networks \
-    --enable-ip-alias \
-    --enable-private-nodes \
-    --enable-private-endpoint \
-    --master-ipv4-cidr $MASTER_IPV4_CIDR \
-    --labels mesh_id="$MESH_ID" \
-    --workload-pool "$WORKLOAD_POOL" \
-    --enable-stackdriver-kubernetes
+    #if [ -z "$(gcloud container clusters list --filter "name=$GKE_CLUSTER_NAME" --format='get(name)')" ]; then
+     # gcloud container clusters create "$GKE_CLUSTER_NAME" \
+    #--region "$REGION" \
+    #--network $NETWORK \
+    #--subnetwork $SUB_NETWORK \
+    #--default-max-pods-per-node "110" \
+    #--machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
+    #--num-nodes "1" \
+    #--enable-autoscaling --min-nodes "3" --max-nodes "6" \
+    #--enable-master-authorized-networks \
+    #--enable-ip-alias \
+    #--enable-private-nodes \
+    #--enable-private-endpoint \
+    #--master-ipv4-cidr $MASTER_IPV4_CIDR \
+    #--labels mesh_id="$MESH_ID" \
+    #--workload-pool "$WORKLOAD_POOL" \
+    #--enable-stackdriver-kubernetes
 
-gcloud container clusters update "$GKE_CLUSTER_NAME" \
-    --region "$REGION" \
-    --enable-master-authorized-networks \
-    --master-authorized-networks $AUTHORIZED_NETWORK
+#gcloud container clusters update "$GKE_CLUSTER_NAME" \
+  #  --region "$REGION" \
+  #  --enable-master-authorized-networks \
+  #  --master-authorized-networks $AUTHORIZED_NETWORK
 
 gcloud container node-pools create "apigee-data" \
     --project "$PROJECT_ID" \
@@ -341,7 +341,7 @@ gcloud container node-pools create "apigee-data" \
     --image-type "COS_CONTAINERD" --disk-type "pd-ssd" --disk-size "250" \
     --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
     --num-nodes "1" \
-    --tags "apigee-data","apigee-$PROJECT_ID","$GKE_CLUSTER_NAME" \
+    --tags "apigee-data","gke-$PROJECT_ID","gke-$PROJECT_ID-main" \
     --enable-autoupgrade --enable-autorepair \
     --max-surge-upgrade 1 --max-unavailable-upgrade 0
 
@@ -353,16 +353,16 @@ gcloud container node-pools create "apigee-runtime" \
     --image-type "COS_CONTAINERD" --disk-type "pd-ssd" --disk-size "10" \
     --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
     --num-nodes "2" \
-    --tags "apigee-runtime","apigee-$PROJECT_ID","$GKE_CLUSTER_NAME" \
+    --tags "apigee-runtime","gke-$PROJECT_ID","gke-$PROJECT_ID-main" \
     --enable-autoscaling --min-nodes "2" --max-nodes "4" \
     --enable-autoupgrade --enable-autorepair \
     --max-surge-upgrade 1 --max-unavailable-upgrade 0
 
-gcloud container node-pools delete "default-pool" \
-    --project "$PROJECT_ID" \
-    --cluster "$GKE_CLUSTER_NAME" \
-    --region "$REGION" -q
-    fi
+#gcloud container node-pools delete "default-pool" \
+    #--project "$PROJECT_ID" \
+    #--cluster "$GKE_CLUSTER_NAME" \
+    #--region "$REGION" -q
+    #fi
 
     gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region=$REGION
 
