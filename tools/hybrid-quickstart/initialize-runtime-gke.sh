@@ -46,10 +46,10 @@ add_env_to_envgroup $ENV_NAME $ENV_GROUP_NAME
 #configure_network $ENV_GROUP_NAME
 
 # create a minimal GKE cluster
-create_gke_cluster
+#create_gke_cluster
 
 # Push the cert manager docker images to gcr.io
-push_docker_to_gcr
+#push_docker_to_gcr
 
 # install Anthos service mesh and certmanager
 install_asm_and_certmanager

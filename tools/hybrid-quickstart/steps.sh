@@ -328,10 +328,10 @@ create_gke_cluster() {
     --workload-pool "$WORKLOAD_POOL" \
     --enable-stackdriver-kubernetes
 
-#gcloud container clusters update "$GKE_CLUSTER_NAME" \
-#    --region "$REGION" \
-#    --enable-master-authorized-networks \
-#    --master-authorized-networks $AUTHORIZED_NETWORK
+gcloud container clusters update "$GKE_CLUSTER_NAME" \
+    --region "$REGION" \
+    --enable-master-authorized-networks \
+    --master-authorized-networks $AUTHORIZED_NETWORK
 
 gcloud container node-pools create "apigee-data" \
     --project "$PROJECT_ID" \
@@ -401,8 +401,8 @@ push_docker_to_gcr(){
 install_asm_and_certmanager() {
 
   echo "👩🏽‍💼 Creating Cert Manager"
-  #kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml
-  kubectl apply --validate=false -f "$QUICKSTART_ROOT/cert-manager-$PROJECT_ID.yaml"
+  kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml
+  #kubectl apply --validate=false -f "$QUICKSTART_ROOT/cert-manager-$PROJECT_ID.yaml"
 
   echo "🏗️ Preparing ASM install requirements"
   mkdir -p "$QUICKSTART_TOOLS"/kpt
