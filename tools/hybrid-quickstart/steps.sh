@@ -310,28 +310,28 @@ configure_network() {
 create_gke_cluster() {
     echo "🚀 Create GKE cluster"
 
-    #if [ -z "$(gcloud container clusters list --filter "name=$GKE_CLUSTER_NAME" --format='get(name)')" ]; then
-     # gcloud container clusters create "$GKE_CLUSTER_NAME" \
-    #--region "$REGION" \
-    #--network $NETWORK \
-    #--subnetwork $SUB_NETWORK \
-    #--default-max-pods-per-node "110" \
-    #--machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
-    #--num-nodes "1" \
-    #--enable-autoscaling --min-nodes "3" --max-nodes "6" \
-    #--enable-master-authorized-networks \
-    #--enable-ip-alias \
-    #--enable-private-nodes \
-    #--enable-private-endpoint \
-    #--master-ipv4-cidr $MASTER_IPV4_CIDR \
-    #--labels mesh_id="$MESH_ID" \
-    #--workload-pool "$WORKLOAD_POOL" \
-    #--enable-stackdriver-kubernetes
+    if [ -z "$(gcloud container clusters list --filter "name=$GKE_CLUSTER_NAME" --format='get(name)')" ]; then
+      gcloud container clusters create "$GKE_CLUSTER_NAME" \
+    --region "$REGION" \
+    --network $NETWORK \
+    --subnetwork $SUB_NETWORK \
+    --default-max-pods-per-node "110" \
+    --machine-type "$GKE_CLUSTER_MACHINE_TYPE" \
+    --num-nodes "1" \
+    --enable-autoscaling --min-nodes "3" --max-nodes "6" \
+    --enable-master-authorized-networks \
+    --enable-ip-alias \
+    --enable-private-nodes \
+    --enable-private-endpoint \
+    --master-ipv4-cidr $MASTER_IPV4_CIDR \
+    --labels mesh_id="$MESH_ID" \
+    --workload-pool "$WORKLOAD_POOL" \
+    --enable-stackdriver-kubernetes
 
 #gcloud container clusters update "$GKE_CLUSTER_NAME" \
-  #  --region "$REGION" \
-  #  --enable-master-authorized-networks \
-  #  --master-authorized-networks $AUTHORIZED_NETWORK
+#    --region "$REGION" \
+#    --enable-master-authorized-networks \
+#    --master-authorized-networks $AUTHORIZED_NETWORK
 
 gcloud container node-pools create "apigee-data" \
     --project "$PROJECT_ID" \
@@ -341,7 +341,7 @@ gcloud container node-pools create "apigee-data" \
     --image-type "COS" --disk-type "pd-ssd" --disk-size "250" \
     --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
     --num-nodes "1" \
-    --tags "apigee-data","gke-$PROJECT_ID","gke-$PROJECT_ID-main", "gke-$GKE_CLUSTER_NAME" \
+    --tags "apigee-data","gke-$PROJECT_ID","gke-$PROJECT_ID-main","gke-$GKE_CLUSTER_NAME" \
     --enable-autoupgrade --enable-autorepair \
     --max-surge-upgrade 1 --max-unavailable-upgrade 0
 
@@ -353,16 +353,16 @@ gcloud container node-pools create "apigee-runtime" \
     --image-type "COS" --disk-type "pd-ssd" --disk-size "10" \
     --metadata disable-legacy-endpoints=true --scopes "https://www.googleapis.com/auth/cloud-platform" \
     --num-nodes "2" \
-    --tags "apigee-runtime","gke-$PROJECT_ID","gke-$PROJECT_ID-main", "gke-$GKE_CLUSTER_NAME" \
+    --tags "apigee-runtime","gke-$PROJECT_ID","gke-$PROJECT_ID-main","gke-$GKE_CLUSTER_NAME" \
     --enable-autoscaling --min-nodes "2" --max-nodes "4" \
     --enable-autoupgrade --enable-autorepair \
     --max-surge-upgrade 1 --max-unavailable-upgrade 0
 
-#gcloud container node-pools delete "default-pool" \
-    #--project "$PROJECT_ID" \
-    #--cluster "$GKE_CLUSTER_NAME" \
-    #--region "$REGION" -q
-    #fi
+gcloud container node-pools delete "default-pool" \
+    --project "$PROJECT_ID" \
+    --cluster "$GKE_CLUSTER_NAME" \
+    --region "$REGION" -q
+    fi
 
     gcloud container clusters get-credentials "$GKE_CLUSTER_NAME" --region=$REGION
 
@@ -373,10 +373,36 @@ gcloud container node-pools create "apigee-runtime" \
 }
 
 
+push_docker_to_gcr(){
+  echo "👩🏽‍💼 Pushing cert manager docker images to gcr.io"
+  docker pull quay.io/jetstack/cert-manager-webhook:$CERT_MANAGER_VERSION
+  docker tag quay.io/jetstack/cert-manager-webhook:$CERT_MANAGER_VERSION gcr.io/$PROJECT_ID/cert-manager-webhook:$CERT_MANAGER_VERSION
+  docker push gcr.io/$PROJECT_ID/cert-manager-webhook:$CERT_MANAGER_VERSION
+
+  docker pull quay.io/jetstack/cert-manager-cainjector:$CERT_MANAGER_VERSION
+  docker tag quay.io/jetstack/cert-manager-cainjector:$CERT_MANAGER_VERSION gcr.io/$PROJECT_ID/cert-manager-cainjector:$CERT_MANAGER_VERSION
+  docker push gcr.io/$PROJECT_ID/cert-manager-cainjector:$CERT_MANAGER_VERSION
+
+  docker pull quay.io/jetstack/cert-manager-controller:$CERT_MANAGER_VERSION
+  docker tag quay.io/jetstack/cert-manager-controller:$CERT_MANAGER_VERSION gcr.io/$PROJECT_ID/cert-manager-controller:$CERT_MANAGER_VERSION
+  docker push gcr.io/$PROJECT_ID/cert-manager-controller:$CERT_MANAGER_VERSION
+
+  cp "$QUICKSTART_ROOT/cert-manager.yaml" "$QUICKSTART_ROOT/cert-manager-$PROJECT_ID.yaml"
+   if [[ "$OS_NAME" == "Linux" ]]; then
+      sed -i -e "s/PROJECT_ID/$PROJECT_ID/g" "$QUICKSTART_ROOT/cert-manager-$PROJECT_ID.yaml"
+    elif [[ "$OS_NAME" == "Darwin" ]]; then
+      sed -i '' "s/PROJECT_ID/$PROJECT_ID/g" "$QUICKSTART_ROOT/cert-manager-$PROJECT_ID.yaml"
+    else
+      echo "💣 Only Linux and macOS are supported at this time. You seem to be running on $OS_NAME."
+      exit 2
+    fi
+}
+
 install_asm_and_certmanager() {
 
   echo "👩🏽‍💼 Creating Cert Manager"
-  kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml
+  #kubectl apply --validate=false -f https://github.com/jetstack/cert-manager/releases/download/$CERT_MANAGER_VERSION/cert-manager.yaml
+  kubectl apply --validate=false -f "$QUICKSTART_ROOT/cert-manager-$PROJECT_ID.yaml"
 
   echo "🏗️ Preparing ASM install requirements"
   mkdir -p "$QUICKSTART_TOOLS"/kpt
@@ -490,7 +516,7 @@ create_self_signed_cert() {
     openssl req -x509 -sha256 -nodes -days 365 -newkey rsa:2048 -subj "/CN=$DNS_NAME/O=Apigee Quickstart" -keyout "$HYBRID_HOME/certs/$CA_CERT_NAME.key" -out "$HYBRID_HOME/certs/$CA_CERT_NAME.crt"
   fi
 
-  openssl req -out "$HYBRID_HOME/certs/$ENV_GROUP_NAME.csr" -newkey rsa:2048 -nodes -keyout "$HYBRID_HOME/certs/$ENV_GROUP_NAME.key" -subj "/CN=$ENV_GROUP_NAME.$DNS_NAME/O=Apigee Quickstart"
+  openssl req -out "$HYBRID_HOME/certs/$ENV_GROUP_NAME.csr" -newkey rsa:2048 -nodes -keyout "$HYBRID_HOME/certs/$ENV_GROUP_NAME.key" -subj "/CN=$DNS_NAME/O=Apigee Quickstart"
 
   openssl x509 -req -days 365 -CA "$HYBRID_HOME/certs/$CA_CERT_NAME.crt" -CAkey "$HYBRID_HOME/certs/$CA_CERT_NAME.key" -set_serial 0 -in "$HYBRID_HOME/certs/$ENV_GROUP_NAME.csr" -out "$HYBRID_HOME/certs/$ENV_GROUP_NAME.crt"
 

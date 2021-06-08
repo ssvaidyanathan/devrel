@@ -2,7 +2,7 @@ hybrid-files
 tools
 .env*
 example-proxy/*.zip
-*.pem
-asm-install.sh
 apigee-ca.yaml
 apigee-namespace.yaml
+cert-manager-*.yaml
+*.pem
