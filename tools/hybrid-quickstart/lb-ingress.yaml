@@ -3,7 +3,6 @@ kind: Ingress
 metadata:
   annotations:
     kubernetes.io/ingress.allow-http: "false"
-    #kubernetes.io/ingress.global-static-ip-name: apigee-global
   name: xlb-apigee-ingress
   namespace: istio-system
 spec:
